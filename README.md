@@ -44,7 +44,7 @@ Next updates go over Wi-Fi:
 uvx esphome run compagnon.yaml --device OTA
 ```
 
-Home Assistant also gets 2 controls: the backlight (capped at 50% in hardware, see below) and the onboard RGB LED (off by default).
+Home Assistant also gets 2 settings: the screen brightness (100% means 50% of the panel's maximum, see below) and the brightness of the onboard RGB LED, which glows with the mood color (green, amber, red; off by default). They are numbers, not lights, on purpose: an automation that switches off all the lights of a room must not switch the screen off.
 
 ## How it works
 

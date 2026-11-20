@@ -17,11 +17,16 @@ substitutions:
   msg_wait: "J'attends HA..."
   label_temp: "Temp."
   label_hum: "Humidité"
-  name_backlight: "Rétroéclairage"
+  name_screen_brightness: "Luminosité écran"
+  name_led_brightness: "Luminosité LED"
 
 esphome:
   name: compagnon
   friendly_name: Compagnon
+  on_boot:
+    priority: -100
+    then:
+      - lambda: id(apply_screen_brightness)->execute();
 
 esp32:
   variant: esp32c6
@@ -54,6 +59,51 @@ globals:
   - id: frame
     type: uint32_t
     initial_value: "0"
+  # Current mood (-1 no data, 0 good, 1 average, 2 bad), set by the display lambda.
+  - id: mood_now
+    type: int
+    initial_value: "-1"
+
+# The backlight and the LED are internal lights driven by these numbers, not Home Assistant
+# lights: area-wide "turn off the lights" actions must not switch the screen off.
+number:
+  - platform: template
+    id: screen_brightness
+    name: ${name_screen_brightness}
+    icon: mdi:brightness-6
+    entity_category: config
+    unit_of_measurement: "%"
+    min_value: 0
+    max_value: 100
+    step: 5
+    optimistic: true
+    restore_value: true
+    initial_value: 80
+    on_value:
+      - script.execute: apply_screen_brightness
+  - platform: template
+    id: led_brightness
+    name: ${name_led_brightness}
+    icon: mdi:led-on
+    entity_category: config
+    unit_of_measurement: "%"
+    min_value: 0
+    max_value: 100
+    step: 5
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+
+script:
+  - id: apply_screen_brightness
+    then:
+      - lambda: |-
+          const float v = id(screen_brightness).state;
+          if (std::isnan(v) || v <= 0) {
+            id(backlight).turn_off().perform();
+          } else {
+            id(backlight).turn_on().set_brightness(v / 100.0f).perform();
+          }
 
 sensor:
   - platform: homeassistant
@@ -79,18 +129,19 @@ output:
 light:
   - platform: monochromatic
     id: backlight
-    name: ${name_backlight}
+    internal: true
     output: backlight_pwm
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: ALWAYS_ON
     default_transition_length: 300ms
   - platform: esp32_rmt_led_strip
     id: rgb_led
-    name: LED
+    internal: true
     pin: GPIO8
     num_leds: 1
     chipset: WS2812
     channel_colors: GRB
     restore_mode: ALWAYS_OFF
+    default_transition_length: 1s
 
 spi:
   clk_pin: GPIO7
@@ -114,6 +165,25 @@ interval:
       - lambda: |-
           id(frame)++;
           id(screen).update();
+  # The LED glows with the mood color, at the brightness set from Home Assistant.
+  - interval: 1s
+    then:
+      - lambda: |-
+          static int last_mood = -2;
+          static float last_level = -1;
+          const int mood = id(mood_now);
+          const float level = std::isnan(id(led_brightness).state) ? 0 : id(led_brightness).state / 100.0f;
+          if (mood == last_mood && level == last_level) return;
+          last_mood = mood;
+          last_level = level;
+          if (level <= 0 || mood < 0) {
+            id(rgb_led).turn_off().perform();
+            return;
+          }
+          float r = 0.1f, g = 1.0f, b = 0.3f;     // good: green
+          if (mood == 1) { r = 1.0f; g = 0.6f; b = 0.0f; }  // average: amber
+          if (mood == 2) { r = 1.0f; g = 0.05f; b = 0.0f; } // bad: red
+          id(rgb_led).turn_on().set_rgb(r, g, b).set_brightness(level).perform();
 
 display:
   - platform: mipi_spi
@@ -140,6 +210,7 @@ display:
         if ((!std::isnan(c) && c >= 800) || (!std::isnan(p) && p >= 15)) mood = 1;
         if ((!std::isnan(c) && c >= 1200) || (!std::isnan(p) && p >= 35)) mood = 2;
       }
+      id(mood_now) = mood;
       const bool cold = !std::isnan(tc) && tc < 18.0f;
       const bool hot = !std::isnan(tc) && tc > 26.0f;
 
