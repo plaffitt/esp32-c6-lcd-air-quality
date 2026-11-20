@@ -1,0 +1,261 @@
+# Air quality companion for the Waveshare ESP32-C6-LCD-1.47: an animated character whose
+# mood follows the air quality reported by Home Assistant sensors (CO2, PM2.5, temperature,
+# humidity). Adjust the substitutions below to your own entities and language.
+
+substitutions:
+  # Home Assistant entities to display (defaults: IKEA ALPSTUGA with a French HA setup).
+  co2_entity: sensor.alpstuga_air_quality_monitor_dioxyde_de_carbone
+  pm25_entity: sensor.alpstuga_air_quality_monitor_pm2_5
+  temp_entity: sensor.alpstuga_air_quality_monitor_temperature
+  hum_entity: sensor.alpstuga_air_quality_monitor_humidite
+  # 4MB works on every unit; set 8MB if esptool reports an ESP32-C6FH8.
+  flash_size: 4MB
+  # On-screen and Home Assistant texts.
+  msg_ok: "Tout va bien"
+  msg_meh: "L'air s'alourdit"
+  msg_bad: "Aère vite !"
+  msg_wait: "J'attends HA..."
+  label_temp: "Temp."
+  label_hum: "Humidité"
+  name_backlight: "Rétroéclairage"
+
+esphome:
+  name: compagnon
+  friendly_name: Compagnon
+
+esp32:
+  variant: esp32c6
+  flash_size: ${flash_size}
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    # Bare block: OTA uploads are encrypted with the API key above.
+    encryption: {}
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Compagnon Fallback
+
+captive_portal:
+
+globals:
+  # Animation clock, advanced by the interval below before each redraw so that
+  # every slice of a partial-buffer redraw sees the same frame.
+  - id: frame
+    type: uint32_t
+    initial_value: "0"
+
+sensor:
+  - platform: homeassistant
+    id: co2
+    entity_id: ${co2_entity}
+  - platform: homeassistant
+    id: pm25
+    entity_id: ${pm25_entity}
+  - platform: homeassistant
+    id: temp
+    entity_id: ${temp_entity}
+  - platform: homeassistant
+    id: hum
+    entity_id: ${hum_entity}
+
+output:
+  - platform: ledc
+    id: backlight_pwm
+    pin: GPIO22
+    # Waveshare advises <= 50% backlight to avoid burn-in shadows: 100% in HA = 50% here.
+    max_power: 50%
+
+light:
+  - platform: monochromatic
+    id: backlight
+    name: ${name_backlight}
+    output: backlight_pwm
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+  - platform: esp32_rmt_led_strip
+    id: rgb_led
+    name: LED
+    pin: GPIO8
+    num_leds: 1
+    chipset: WS2812
+    channel_colors: GRB
+    restore_mode: ALWAYS_OFF
+
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO6
+
+font:
+  - file: "gfonts://Nunito@800"
+    id: font_value
+    size: 22
+    glyphsets: [GF_Latin_Core]
+    glyphs: "°µ³"
+  - file: "gfonts://Nunito@600"
+    id: font_label
+    size: 13
+    glyphsets: [GF_Latin_Core]
+    glyphs: "°µ³"
+
+interval:
+  - interval: 80ms
+    then:
+      - lambda: |-
+          id(frame)++;
+          id(screen).update();
+
+display:
+  - platform: mipi_spi
+    id: screen
+    model: WAVESHARE-ESP32-C6-LCD-1.47
+    update_interval: never
+    buffer_size: 25%
+    lambda: |-
+      const uint32_t f = id(frame);
+      const float t = f * 0.08f;  // seconds
+
+      auto val = [](esphome::sensor::Sensor *s) -> float {
+        return s->has_state() ? s->state : NAN;
+      };
+      const float c = val(id(co2));
+      const float p = val(id(pm25));
+      const float tc = val(id(temp));
+      const float h = val(id(hum));
+
+      // Mood: 0 happy, 1 meh, 2 suffocating, -1 no data yet.
+      int mood = -1;
+      if (!std::isnan(c) || !std::isnan(p)) {
+        mood = 0;
+        if ((!std::isnan(c) && c >= 800) || (!std::isnan(p) && p >= 15)) mood = 1;
+        if ((!std::isnan(c) && c >= 1200) || (!std::isnan(p) && p >= 35)) mood = 2;
+      }
+      const bool cold = !std::isnan(tc) && tc < 18.0f;
+      const bool hot = !std::isnan(tc) && tc > 26.0f;
+
+      const Color bg(18, 16, 28);
+      const Color white(245, 245, 245);
+      const Color ink(30, 24, 40);
+      const Color grey(150, 145, 165);
+      Color body(120, 210, 160);                       // happy: mint
+      if (mood == 1) body = Color(240, 200, 90);       // meh: mustard
+      if (mood == 2) body = Color(235, 110, 100);      // suffocating: coral
+      if (mood == -1) body = Color(140, 140, 160);     // waiting for data
+      if (cold) body = Color(body.r * 0.7f, body.g * 0.8f, std::min(255.0f, body.b * 1.2f + 60));
+
+      it.fill(bg);
+
+      // Body: breathes (faster when the air is bad), bobs, shivers when cold.
+      const float breath_speed = mood == 2 ? 4.0f : (mood == 1 ? 2.2f : 1.4f);
+      const int r = 56 + (int) (3.0f * sinf(t * breath_speed));
+      int cx = 86 + (cold ? ((f % 2) ? 2 : -2) : 0);
+      const int cy = 112 + (int) (4.0f * sinf(t * 0.9f));
+
+      // Soft shadow under the character.
+      it.filled_circle(86, 186, 6, Color(10, 8, 16));
+      for (int dx = -40; dx <= 40; dx += 8) it.filled_circle(86 + dx, 186, 5, Color(10, 8, 16));
+
+      it.filled_circle(cx, cy, r, body);
+      // Little sprout on top.
+      const int sway = (int) (4.0f * sinf(t * 1.3f));
+      it.line(cx, cy - r, cx + sway, cy - r - 14, Color(90, 170, 110));
+      it.line(cx + 1, cy - r, cx + 1 + sway, cy - r - 14, Color(90, 170, 110));
+      it.filled_circle(cx + sway + 5, cy - r - 15, 5, Color(110, 200, 120));
+      it.filled_circle(cx + sway - 4, cy - r - 13, 4, Color(110, 200, 120));
+
+      // Eyes: blink for 2 frames every ~4 s; look around slowly.
+      const bool blink = (f % 50) < 2;
+      const int look = (int) (3.0f * sinf(t * 0.5f));
+      const int ey = cy - 10;
+      for (int side = -1; side <= 1; side += 2) {
+        const int ex = cx + side * 20;
+        if (blink || mood == -1) {
+          it.filled_rectangle(ex - 8, ey, 16, 3, ink);
+        } else if (mood == 2) {
+          // Dizzy "x" eyes.
+          it.line(ex - 6, ey - 6, ex + 6, ey + 6, ink);
+          it.line(ex - 6, ey + 6, ex + 6, ey - 6, ink);
+          it.line(ex - 5, ey - 6, ex + 7, ey + 6, ink);
+          it.line(ex - 5, ey + 6, ex + 7, ey - 6, ink);
+        } else {
+          it.filled_circle(ex, ey, 9, white);
+          it.filled_circle(ex + look, ey + 1, 5, ink);
+          it.filled_circle(ex + look + 2, ey - 2, 2, white);
+        }
+      }
+
+      // Cheeks when happy.
+      if (mood == 0) {
+        it.filled_circle(cx - 34, cy + 8, 7, Color(250, 150, 160));
+        it.filled_circle(cx + 34, cy + 8, 7, Color(250, 150, 160));
+      }
+
+      // Mouth.
+      const int my = cy + 16;
+      if (mood == 0) {
+        // Smile: lower half of a ring.
+        for (int a = 20; a <= 160; a += 4) {
+          const float rad = a * 3.14159f / 180.0f;
+          it.filled_circle(cx + (int) (12 * cosf(rad)), my - 4 + (int) (8 * sinf(rad)), 2, ink);
+        }
+      } else if (mood == 1) {
+        it.filled_rectangle(cx - 9, my, 18, 3, ink);
+      } else if (mood == 2) {
+        // Gasping mouth, opening and closing.
+        const int o = 5 + (int) (3.0f * fabsf(sinf(t * 4.0f)));
+        it.filled_circle(cx, my + 2, o, ink);
+      } else {
+        it.filled_circle(cx, my, 2, ink);
+      }
+
+      // Sweat drop when hot or suffocating.
+      if (hot || mood == 2) {
+        const int dy = (int) ((f * 2) % 30);
+        const Color drop(120, 190, 255);
+        it.filled_circle(cx + r - 6, cy - 30 + dy, 4, drop);
+        it.filled_triangle(cx + r - 10, cy - 31 + dy, cx + r - 2, cy - 31 + dy, cx + r - 6, cy - 39 + dy, drop);
+      }
+
+      // Floating "z" bubbles while waiting for data.
+      if (mood == -1) {
+        const int zy = (int) ((f % 40) * 1.0f);
+        it.print(cx + 40, cy - 40 - zy, id(font_label), grey, "z");
+      }
+
+      // Short message under the character.
+      const char *msg = "${msg_ok}";
+      if (mood == 1) msg = "${msg_meh}";
+      if (mood == 2) msg = "${msg_bad}";
+      if (mood == -1) msg = "${msg_wait}";
+      it.print(86, 204, id(font_label), white, TextAlign::TOP_CENTER, msg);
+
+      // 2x2 grid of values.
+      auto cell = [&](int x, int y, const char *label, float v, const char *fmt, Color col) {
+        it.print(x, y, id(font_label), grey, TextAlign::TOP_CENTER, label);
+        if (std::isnan(v)) {
+          it.print(x, y + 15, id(font_value), grey, TextAlign::TOP_CENTER, "--");
+        } else {
+          it.printf(x, y + 15, id(font_value), col, TextAlign::TOP_CENTER, fmt, v);
+        }
+      };
+      auto level = [](float v, float warn, float bad) -> Color {
+        if (std::isnan(v) || v < warn) return Color(170, 230, 190);
+        if (v < bad) return Color(245, 210, 110);
+        return Color(245, 130, 120);
+      };
+      it.filled_rectangle(12, 230, 148, 1, Color(50, 45, 65));
+      cell(46, 238, "CO2 ppm", c, "%.0f", level(c, 800, 1200));
+      cell(126, 238, "PM2.5 µg/m³", p, "%.0f", level(p, 15, 35));
+      const Color neutral(220, 215, 235);
+      cell(46, 280, "${label_temp}", tc, "%.1f°", (cold || hot) ? Color(245, 210, 110) : neutral);
+      cell(126, 280, "${label_hum}", h, "%.0f%%", (!std::isnan(h) && (h < 30 || h > 70)) ? Color(245, 210, 110) : neutral);
