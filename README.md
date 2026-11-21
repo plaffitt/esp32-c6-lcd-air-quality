@@ -144,3 +144,7 @@ uvx --from esptool esptool --port /dev/ttyACM0 write-flash 0 factory-flash.bin
 - ESPHome configs shared in [this Home Assistant community thread](https://community.home-assistant.io/t/help-needed-to-get-this-tiny-screen-working-esp32-c6-1-47in-display/800102).
 - Known issue reported on [esp32.com](https://esp32.com/viewtopic.php?p=147339): the ST7789 driver of the Waveshare Arduino examples has a screen rotation bug.
 - Community projects: VolosR/WaveShareC6lvglexample (LVGL 8 + SquareLine Studio decorative dashboard), thelastoutpostworkshop/ESP32-C6-LCD-1.47_LVGL9_Crypto_Monitor, thelastoutpostworkshop/ESP32-C6-LCD-1.47_video_player, nishad2m8/Squareline-OBP, moononournation/animation_clock.
+
+## License
+
+[MIT](LICENSE)
