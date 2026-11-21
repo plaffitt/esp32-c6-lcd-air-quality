@@ -4,12 +4,16 @@ An [ESPHome](https://esphome.io) firmware that turns the [Waveshare ESP32-C6-LCD
 
 | Air | Character | Message (default) |
 |---|---|---|
-| CO2 < 800 ppm and PM2.5 < 15 µg/m³ | Mint, smiling, pink cheeks, slow breathing | "Tout va bien" |
-| CO2 < 1200 ppm and PM2.5 < 35 µg/m³ | Mustard, flat mouth, faster breathing | "L'air s'alourdit" |
+| CO2 < 1500 ppm and PM2.5 < 15 µg/m³ | Mint, smiling, pink cheeks, slow breathing | "Tout va bien" |
+| CO2 < 2500 ppm and PM2.5 < 35 µg/m³ | Mustard, flat mouth, slightly faster breathing | "L'air s'alourdit" |
 | Above | Coral, dizzy eyes, gasping, sweating | "Aère vite !" |
 | No data yet | Grey, sleeping | "J'attends HA..." |
 
+The CO2 thresholds are substitutions (`co2_warn`, `co2_bad`). Once the air is bad, the character stays bad until the CO2 goes back under `co2_warn`, so that it keeps asking to air the room until it is done, and it does not flicker around a threshold.
+
 It also shivers and turns blue below 18 °C, and sweats above 26 °C.
+
+The sky behind the character follows the sun of Home Assistant (`sun.sun` elevation and azimuth): blue sky with the sun crossing from east to west by day, orange glow at sunrise and sunset, dark sky with a crescent moon and twinkling stars at night.
 
 The default texts are French; every text is a substitution at the top of `compagnon.yaml`.
 
