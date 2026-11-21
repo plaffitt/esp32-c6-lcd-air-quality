@@ -62,6 +62,34 @@ globals:
   - id: mood_now
     type: int
     initial_value: "-1"
+  # Current view (0 character, 1 big values) and the frame it was entered at.
+  - id: view
+    type: int
+    initial_value: "0"
+  - id: view_since
+    type: uint32_t
+    initial_value: "0"
+
+# BOOT button (GPIO9): a short press toggles between the character and the big values.
+# It is only a strapping pin at reset: holding it while powering up enters download mode.
+binary_sensor:
+  - platform: gpio
+    id: boot_button
+    internal: true
+    pin:
+      number: GPIO9
+      inverted: true
+      ignore_strapping_warning: true
+      mode:
+        input: true
+        pullup: true
+    on_click:
+      min_length: 30ms
+      max_length: 800ms
+      then:
+        - lambda: |-
+            id(view) = id(view) == 0 ? 1 : 0;
+            id(view_since) = id(frame);
 
 # The backlight is an internal light driven by this number, not a Home Assistant light:
 # area-wide "turn off the lights" actions must not switch the screen off.
@@ -145,12 +173,18 @@ font:
     size: 13
     glyphsets: [GF_Latin_Core]
     glyphs: "°µ³"
+  - file: "gfonts://Nunito@800"
+    id: font_big
+    size: 44
+    glyphs: "0123456789.-°%"
 
 interval:
   - interval: 80ms
     then:
       - lambda: |-
           id(frame)++;
+          // The big values view goes back to the character after 10 s.
+          if (id(view) == 1 && id(frame) - id(view_since) > 125) id(view) = 0;
           id(screen).update();
           // The LED breathes with the character, in the mood color. It is written
           // directly to the strip (not through the light state) to avoid a log line
@@ -195,6 +229,33 @@ display:
       id(mood_now) = mood;
       const bool cold = !std::isnan(tc) && tc < 18.0f;
       const bool hot = !std::isnan(tc) && tc > 26.0f;
+
+      // Big values view, readable from across the room.
+      if (id(view) == 1) {
+        const Color dim(150, 145, 165);
+        it.fill(Color(18, 16, 28));
+        auto lvl = [](float v, float warn, float bad) -> Color {
+          if (std::isnan(v) || v < warn) return Color(170, 230, 190);
+          if (v < bad) return Color(245, 210, 110);
+          return Color(245, 130, 120);
+        };
+        auto row = [&](int y, const char *label, float v, const char *fmt, Color col) {
+          it.filled_rectangle(10, y + 8, 4, 62, col);
+          it.print(24, y + 4, id(font_label), dim, label);
+          if (std::isnan(v)) {
+            it.print(24, y + 18, id(font_big), dim, "--");
+          } else {
+            it.printf(24, y + 18, id(font_big), col, fmt, v);
+          }
+        };
+        const Color neutral(220, 215, 235);
+        const Color warn(245, 210, 110);
+        row(2, "CO2 ppm", c, "%.0f", lvl(c, 800, 1200));
+        row(81, "PM2.5 µg/m³", p, "%.0f", lvl(p, 15, 35));
+        row(160, "${label_temp}", tc, "%.1f°", (cold || hot) ? warn : neutral);
+        row(239, "${label_hum}", h, "%.0f%%", (!std::isnan(h) && (h < 30 || h > 70)) ? warn : neutral);
+        return;
+      }
 
       const Color bg(18, 16, 28);
       const Color white(245, 245, 245);

@@ -44,6 +44,8 @@ Next updates go over Wi-Fi:
 uvx esphome run compagnon.yaml --device OTA
 ```
 
+A short press on the BOOT button switches to a view with the 4 values in big digits, readable from across the room; it goes back to the character after 10 seconds (or on the next press).
+
 The onboard RGB LED breathes with the character, in the mood color (green, amber, red; off while there is no data). It is not controllable from Home Assistant.
 
 Home Assistant gets a single setting, the screen brightness (100% means 50% of the panel's maximum, see below). It is a number, not a light, on purpose: an automation that switches off all the lights of a room must not switch the screen off.
