@@ -15,12 +15,14 @@ It also shivers and turns blue below 18 °C, and sweats above 26 °C.
 
 The sky behind the character follows the sun of Home Assistant (`sun.sun` elevation and azimuth): blue sky with the sun crossing from east to west by day, orange glow at sunrise and sunset, dark sky with a crescent moon and twinkling stars at night.
 
+The weather is drawn in that sky from a Home Assistant weather entity (`weather_entity` substitution, its state only): drifting clouds (more of them and a greyer sky when it is cloudy, faster with wind), rain streaks, falling snow, lightning flashes with a bolt during storms, and a grey veil for fog. Clouds hide the stars, the moon and the sun.
+
 The default texts are French; every text is a substitution at the top of `compagnon.yaml`.
 
 ## Requirements
 
 - A Waveshare ESP32-C6-LCD-1.47 (the non-touch version) and a USB-C data cable (some cables are charge-only: the board then powers on but never shows up in `lsusb`).
-- Home Assistant with sensors for CO2, PM2.5, temperature and humidity. The defaults match an IKEA ALPSTUGA air quality monitor in a French Home Assistant setup.
+- Home Assistant with sensors for CO2, PM2.5, temperature and humidity, the `sun.sun` entity (default) and a weather entity. The defaults match an IKEA ALPSTUGA air quality monitor in a French Home Assistant setup.
 - [uv](https://docs.astral.sh/uv/), to run ESPHome and esptool without installing them (or install ESPHome any other way). Tested with ESPHome 2026.11.0.
 
 ## Setup
