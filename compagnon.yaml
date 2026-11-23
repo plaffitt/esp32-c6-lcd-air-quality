@@ -11,6 +11,9 @@ substitutions:
   hum_entity: sensor.alpstuga_air_quality_monitor_humidite
   # Weather entity drawn in the sky (clouds, rain, snow, storm, fog, wind).
   weather_entity: weather.maison
+  # Test only: forces a weather condition (e.g. "rainy") instead of the entity state.
+  # Flash with: uvx esphome -s weather_override rainy run compagnon.yaml --device OTA
+  weather_override: ""
   # CO2 thresholds in ppm: average from co2_warn, bad from co2_bad. Once bad, the character
   # stays bad until the CO2 goes back under co2_warn (time to air the room properly).
   co2_warn: "1500"
@@ -157,7 +160,8 @@ text_sensor:
     on_value:
       - lambda: |-
           // Home Assistant weather conditions: https://www.home-assistant.io/integrations/weather/
-          const std::string &w = x;
+          const std::string forced = "${weather_override}";
+          const std::string &w = forced.empty() ? x : forced;
           int clouds = 0, rain = 0;
           bool snow = false, storm = false, fog = false, wind = false;
           if (w == "partlycloudy") clouds = 2;
