@@ -478,10 +478,16 @@ display:
       int cx = 86 + (cold ? (((f / 3) % 2) ? 1 : -1) : 0);
       const int cy = 112 + (int) (4.0f * sinf(t * 0.7f));
 
-      // Soft shadow under the character.
+      // Shadow on the ground: a flat ellipse, smaller when the character floats up.
       const Color shade = mix(sky_at(186), Color(0, 0, 0), 0.45f);
-      it.filled_circle(86, 186, 6, shade);
-      for (int dx = -40; dx <= 40; dx += 8) it.filled_circle(86 + dx, 186, 5, shade);
+      const float bob = (cy - 112) / 4.0f;  // -1 (up) to 1 (down)
+      const float sa = 40.0f + 6.0f * bob;  // half width
+      const float sb = 5.0f + 1.0f * bob;   // half height
+      for (int yy = (int) -sb; yy <= (int) sb; yy++) {
+        const float k = 1.0f - (yy * yy) / (sb * sb);
+        const int hw = (int) (sa * sqrtf(k > 0 ? k : 0));
+        if (hw > 0) it.horizontal_line(86 - hw, 186 + yy, 2 * hw + 1, shade);
+      }
 
       it.filled_circle(cx, cy, r, body);
       // Little sprout on top.
